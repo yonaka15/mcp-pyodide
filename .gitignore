@@ -62,4 +62,4 @@ __pycache__/
 *$py.class
 *.so
 .Python
-pyodide-packages/
+data/

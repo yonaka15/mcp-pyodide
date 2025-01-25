@@ -26,6 +26,8 @@ const server = new Server(
 const TOOLS: Tool[] = [
   tools.EXECUTE_PYTHON_TOOL,
   tools.INSTALL_PYTHON_PACKAGES_TOOL,
+  tools.GET_MOUNT_POINTS_TOOL,
+  tools.LIST_MOUNTED_DIRECTORY_TOOL,
 ];
 
 const isExecutePythonArgs = type({
@@ -35,6 +37,10 @@ const isExecutePythonArgs = type({
 
 const isInstallPythonPackagesArgs = type({
   package: "string",
+});
+
+const isListMountedDirectoryArgs = type({
+  mountName: "string",
 });
 
 // Tools list handler
@@ -71,6 +77,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const results = await pyodideManager.installPackage(packageName);
         return results;
       }
+      case "get-mount-points": {
+        const results = await pyodideManager.getMountPoints();
+        return results;
+      }
+      case "list-mounted-directory": {
+        const listMountedDirectoryArgs = isListMountedDirectoryArgs(args);
+        if (listMountedDirectoryArgs instanceof type.errors) {
+          throw listMountedDirectoryArgs;
+        }
+        const { mountName } = listMountedDirectoryArgs;
+        const results = await pyodideManager.listMountedDirectory(mountName);
+        return results;
+      }
       default: {
         return {
           content: [{ type: "text", text: `Unknown tool: ${name}` }],
@@ -96,7 +115,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 // Start server
 async function runServer() {
   const pyodideManager = PyodideManager.getInstance();
-  await pyodideManager.initialize();
+
+  const cacheDir = process.env.PYODIDE_CACHE_DIR || "./cache";
+  const dataDir = process.env.PYODIDE_DATA_DIR || "./data";
+
+  // Initialize Pyodide
+  if (!(await pyodideManager.initialize(cacheDir))) {
+    console.error("Failed to initialize Pyodide");
+    return;
+  }
+
+  // Mount directories from environment variables
+  await pyodideManager.mountDirectory("data", dataDir);
+
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error("Pyodide MCP Server running on stdio");
