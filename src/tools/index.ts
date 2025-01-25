@@ -33,3 +33,27 @@ export const INSTALL_PYTHON_PACKAGES_TOOL: Tool = {
     required: ["package"],
   },
 };
+
+export const GET_MOUNT_POINTS_TOOL: Tool = {
+  name: "get-mount-points",
+  description: "List mounted directories",
+  inputSchema: {
+    type: "object",
+    properties: {},
+  },
+};
+
+export const LIST_MOUNTED_DIRECTORY_TOOL: Tool = {
+  name: "list-mounted-directory",
+  description: "List contents of a mounted directory",
+  inputSchema: {
+    type: "object",
+    properties: {
+      mountName: {
+        type: "string",
+        description: "Name of the mount point",
+      },
+    },
+    required: ["mountName"],
+  },
+};
