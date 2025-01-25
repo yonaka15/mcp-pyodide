@@ -3,6 +3,11 @@ import * as path from "path";
 import * as fs from "fs";
 
 import { withOutputCapture } from "../../utils/output-capture.js";
+import {
+  formatSuccess,
+  formatError,
+  contentFormatters,
+} from "../../formatters/index.js";
 
 import type { PyodideInterface } from "pyodide";
 
@@ -88,10 +93,7 @@ class PyodideManager {
   // Get information about all mount points
   async getMountPoints() {
     if (!this.pyodide) {
-      return {
-        isError: true,
-        content: [{ type: "text", text: "Pyodide not initialized" }],
-      };
+      return formatError("Pyodide not initialized");
     }
 
     try {
@@ -102,49 +104,21 @@ class PyodideManager {
           mountPoint: config.mountPoint,
         })
       );
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(mountPoints, null, 2),
-          },
-        ],
-      };
+      return formatSuccess(JSON.stringify(mountPoints, null, 2));
     } catch (error) {
-      return {
-        isError: true,
-        content: [
-          {
-            type: "text",
-            text: `Error getting mount points: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          },
-        ],
-      };
+      return formatError(error);
     }
   }
 
   // List contents of a mounted directory
   async listMountedDirectory(mountName: string) {
     if (!this.pyodide) {
-      return {
-        isError: true,
-        content: [{ type: "text", text: "Pyodide not initialized" }],
-      };
+      return formatError("Pyodide not initialized");
     }
 
     const mountConfig = this.mountPoints.get(mountName);
     if (!mountConfig) {
-      return {
-        isError: true,
-        content: [
-          {
-            type: "text",
-            text: `Mount point not found: ${mountName}`,
-          },
-        ],
-      };
+      return formatError(`Mount point not found: ${mountName}`);
     }
 
     try {
@@ -171,26 +145,13 @@ list_directory("${mountConfig.mountPoint}")
 
       return await this.executePython(pythonCode, 5000);
     } catch (error) {
-      return {
-        isError: true,
-        content: [
-          {
-            type: "text",
-            text: `Error listing directory: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          },
-        ],
-      };
+      return formatError(error);
     }
   }
 
   async executePython(code: string, timeout: number) {
     if (!this.pyodide) {
-      return {
-        isError: true,
-        content: [{ type: "text", text: "Pyodide not initialized" }],
-      };
+      return formatError("Pyodide not initialized");
     }
 
     try {
@@ -213,37 +174,19 @@ list_directory("${mountConfig.mountPoint}")
         { suppressConsole: true }
       );
 
-      return {
-        content: [
-          {
-            type: "text",
-            text: output
-              ? `Output:\n${output}\nResult:\n${String(result)}`
-              : String(result),
-          },
-        ],
-      };
+      return formatSuccess(
+        output
+          ? `Output:\n${output}\nResult:\n${String(result)}`
+          : String(result)
+      );
     } catch (error) {
-      return {
-        isError: true,
-        content: [
-          {
-            type: "text",
-            text: `Error executing Python code: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          },
-        ],
-      };
+      return formatError(error);
     }
   }
 
   async installPackage(packageName: string) {
     if (!this.pyodide) {
-      return {
-        isError: true,
-        content: [{ type: "text", text: "Pyodide not initialized" }],
-      };
+      return formatError("Pyodide not initialized");
     }
 
     try {
@@ -258,21 +201,9 @@ list_directory("${mountConfig.mountPoint}")
         { suppressConsole: true }
       );
 
-      return {
-        content: [{ type: "text", text: output }],
-      };
+      return formatSuccess(output);
     } catch (error) {
-      return {
-        isError: true,
-        content: [
-          {
-            type: "text",
-            text: `Error installing package: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          },
-        ],
-      };
+      return formatError(error);
     }
   }
 }

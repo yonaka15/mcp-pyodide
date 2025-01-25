@@ -63,3 +63,4 @@ __pycache__/
 *.so
 .Python
 data/
+cache/

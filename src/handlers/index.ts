@@ -9,6 +9,7 @@ import { type } from "arktype";
 
 import * as tools from "../tools/index.js";
 import { PyodideManager } from "../lib/pyodide/pyodide-manager.js";
+import { formatError } from "../formatters/index.js";
 
 // Create a server instance
 const server = new Server(
@@ -91,24 +92,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return results;
       }
       default: {
-        return {
-          content: [{ type: "text", text: `Unknown tool: ${name}` }],
-          isError: true,
-        };
+        return formatError(`Unknown tool: ${name}`);
       }
     }
   } catch (error) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Error: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        },
-      ],
-      isError: true,
-    };
+    return formatError(error);
   }
 });
 
