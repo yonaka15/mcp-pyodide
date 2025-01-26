@@ -1,7 +1,7 @@
 {
   "name": "mcp-pyodide",
   "version": "1.0.0",
-  "description": "",
+  "description": "Model Context Protocol Server implementation with Pyodide",
   "main": "index.js",
   "type": "module",
   "bin": {
@@ -13,9 +13,14 @@
   "files": [
     "build"
   ],
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+  "mcp",
+  "model context protocol",
+  "pyodide",
+  "python"
+],
+  "author": "Yoshifumi Nakahira (https://github.com/yonaka15)",
+  "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.4.0",
     "arktype": "^2.0.1",
