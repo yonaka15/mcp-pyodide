@@ -4,10 +4,11 @@ import * as fs from "fs";
 
 import { withOutputCapture } from "../../utils/output-capture.js";
 import {
-  formatSuccess,
-  formatError,
+  formatCallToolError,
+  formatCallToolSuccess,
   contentFormatters,
 } from "../../formatters/index.js";
+import { MIME_TYPES } from "../../lib/mime-types/index.js";
 
 import type { PyodideInterface } from "pyodide";
 
@@ -15,6 +16,12 @@ import type { PyodideInterface } from "pyodide";
 interface MountConfig {
   hostPath: string;
   mountPoint: string;
+}
+
+interface ResourceInfo {
+  name: string; // File name
+  uri: string; // Full URI (file://....)
+  mimeType: string; // MIME type
 }
 
 class PyodideManager {
@@ -41,6 +48,46 @@ class PyodideManager {
         },
         stderr: (text: string) => {
           console.error("[Python stderr]:", text);
+        },
+        jsglobals: {
+          clearInterval,
+          clearTimeout,
+          setInterval,
+          setTimeout,
+          ImageData: {},
+          document: {
+            getElementById: (id: any) => {
+              if (id.includes("canvas")) return null;
+              else
+                return {
+                  addEventListener: () => {},
+                  style: {},
+                  classList: { add: () => {}, remove: () => {} },
+                  setAttribute: () => {},
+                  appendChild: () => {},
+                  remove: () => {},
+                };
+            },
+            createElement: () => ({
+              addEventListener: () => {},
+              style: {},
+              classList: { add: () => {}, remove: () => {} },
+              setAttribute: () => {},
+              appendChild: () => {},
+              remove: () => {},
+            }),
+            createTextNode: () => ({
+              addEventListener: () => {},
+              style: {},
+              classList: { add: () => {}, remove: () => {} },
+              setAttribute: () => {},
+              appendChild: () => {},
+              remove: () => {},
+            }),
+            body: {
+              appendChild: () => {},
+            },
+          },
         },
       });
       console.error("Pyodide initialized successfully");
@@ -93,7 +140,7 @@ class PyodideManager {
   // Get information about all mount points
   async getMountPoints() {
     if (!this.pyodide) {
-      return formatError("Pyodide not initialized");
+      return formatCallToolError("Pyodide not initialized");
     }
 
     try {
@@ -104,21 +151,21 @@ class PyodideManager {
           mountPoint: config.mountPoint,
         })
       );
-      return formatSuccess(JSON.stringify(mountPoints, null, 2));
+      return formatCallToolSuccess(JSON.stringify(mountPoints, null, 2));
     } catch (error) {
-      return formatError(error);
+      return formatCallToolError(error);
     }
   }
 
   // List contents of a mounted directory
   async listMountedDirectory(mountName: string) {
     if (!this.pyodide) {
-      return formatError("Pyodide not initialized");
+      return formatCallToolError("Pyodide not initialized");
     }
 
     const mountConfig = this.mountPoints.get(mountName);
     if (!mountConfig) {
-      return formatError(`Mount point not found: ${mountName}`);
+      return formatCallToolError(`Mount point not found: ${mountName}`);
     }
 
     try {
@@ -145,13 +192,75 @@ list_directory("${mountConfig.mountPoint}")
 
       return await this.executePython(pythonCode, 5000);
     } catch (error) {
-      return formatError(error);
+      return formatCallToolError(error);
     }
+  }
+
+  /**
+   * Get mount name from file path
+   * @param filePath Full path to check
+   * @returns Mount name if found, null if not matched
+   */
+  getMountNameFromPath(filePath: string): string | null {
+    if (!filePath) return null;
+
+    // Normalize path separators
+    const normalizedPath = filePath.replace(/\\/g, "/");
+
+    let longestMatch = "";
+    let matchedMountName: string | null = null;
+
+    // Check each mount point
+    for (const [mountName, config] of this.mountPoints.entries()) {
+      const normalizedHostPath = config.hostPath.replace(/\\/g, "/");
+
+      // Check if path starts with this mount point
+      if (normalizedPath.startsWith(normalizedHostPath)) {
+        // Keep track of the longest matching path
+        if (normalizedHostPath.length > longestMatch.length) {
+          longestMatch = normalizedHostPath;
+          matchedMountName = mountName;
+        }
+      }
+    }
+
+    return matchedMountName;
+  }
+
+  /**
+   * Get mount point information from a file URI
+   * @param uri File URI (e.g., "file:///mnt/data/file.txt")
+   * @returns MountPathInfo object or null if not found
+   */
+  getMountPointInfo(uri: string) {
+    // Remove "file://" prefix
+    let filePath = uri.replace("file://", "");
+
+    // Find matching mount point
+    for (const [mountName, config] of this.mountPoints.entries()) {
+      const mountPoint = config.mountPoint;
+
+      // Check if path starts with this mount point
+      if (filePath.startsWith(mountPoint)) {
+        // Get relative path by removing mount point prefix
+        const relativePath = filePath
+          .slice(mountPoint.length)
+          .replace(/^[/\\]+/, ""); // Remove leading slashes
+
+        return {
+          mountName,
+          mountPoint,
+          relativePath,
+        };
+      }
+    }
+
+    return null;
   }
 
   async executePython(code: string, timeout: number) {
     if (!this.pyodide) {
-      return formatError("Pyodide not initialized");
+      return formatCallToolError("Pyodide not initialized");
     }
 
     try {
@@ -174,19 +283,19 @@ list_directory("${mountConfig.mountPoint}")
         { suppressConsole: true }
       );
 
-      return formatSuccess(
+      return formatCallToolSuccess(
         output
           ? `Output:\n${output}\nResult:\n${String(result)}`
           : String(result)
       );
     } catch (error) {
-      return formatError(error);
+      return formatCallToolError(error);
     }
   }
 
   async installPackage(packageName: string) {
     if (!this.pyodide) {
-      return formatError("Pyodide not initialized");
+      return formatCallToolError("Pyodide not initialized");
     }
 
     try {
@@ -201,9 +310,134 @@ list_directory("${mountConfig.mountPoint}")
         { suppressConsole: true }
       );
 
-      return formatSuccess(output);
+      return formatCallToolSuccess(output);
     } catch (error) {
-      return formatError(error);
+      return formatCallToolError(error);
+    }
+  }
+
+  async readResource(
+    mountName: string,
+    resourcePath: string
+  ): Promise<
+    | {
+        blob: string;
+        mimeType: string;
+      }
+    | { error: string }
+  > {
+    if (!this.pyodide) {
+      return { error: "Pyodide not initialized" };
+    }
+
+    const mountConfig = this.mountPoints.get(mountName);
+    if (!mountConfig) {
+      return { error: `Mount point not found: ${mountName}` };
+    }
+
+    try {
+      // Get full path to the image
+      const fullPath = path.join(mountConfig.hostPath, resourcePath);
+      if (!fs.existsSync(fullPath)) {
+        return { error: `Image file not found: ${fullPath}` };
+      }
+
+      // Get MIME type from file extension
+      const ext = path.extname(fullPath).toLowerCase();
+      const mimeType = MIME_TYPES[ext];
+      if (!mimeType) {
+        return { error: `Unsupported image format: ${ext}` };
+      }
+
+      // Read and encode image
+      const imageBuffer = await fs.promises.readFile(fullPath);
+      const base64Data = imageBuffer.toString("base64");
+
+      return { blob: base64Data, mimeType };
+    } catch (error) {
+      return { error: String(error) };
+    }
+  }
+
+  /**
+   * List all files matching the given MIME types across all mount points
+   * @param mimeTypes Array of MIME types to match (e.g., ['image/jpeg', 'image/png'])
+   * @returns Array of ResourceInfo objects
+   */
+  async listResources(): Promise<ResourceInfo[]> {
+    const resources: ResourceInfo[] = [];
+    const validMimeTypes = new Set(Object.values(MIME_TYPES));
+
+    const isMatchingMimeType = (filePath: string): string | null => {
+      const ext = path.extname(filePath).toLowerCase();
+      const mimeType = MIME_TYPES[ext];
+      return mimeType && validMimeTypes.has(mimeType) ? mimeType : null;
+    };
+
+    const scanDirectory = (dirPath: string): void => {
+      try {
+        const items = fs.readdirSync(dirPath);
+        const mountName = this.getMountNameFromPath(dirPath);
+        if (!mountName) return;
+
+        const config = this.mountPoints.get(mountName);
+        if (!config) return;
+
+        const { hostPath, mountPoint } = config;
+
+        for (const item of items) {
+          const fullPath = path.join(dirPath, item);
+          const stat = fs.statSync(fullPath);
+
+          if (stat.isDirectory()) {
+            // Recursively scan subdirectories
+            scanDirectory(fullPath);
+          } else if (stat.isFile()) {
+            // Check if file matches MIME type
+            const mimeType = isMatchingMimeType(item);
+            if (mimeType) {
+              // Calculate relative path from hostPath
+              const relativePath = path.relative(hostPath, fullPath);
+              // Construct URI with full path
+              const uri = `file://${path.join(mountPoint, relativePath)}`;
+
+              resources.push({
+                name: item,
+                uri,
+                mimeType,
+              });
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`Error scanning directory ${dirPath}:`, error);
+      }
+    };
+
+    // Scan all mount points
+    for (const [_, config] of this.mountPoints.entries()) {
+      scanDirectory(config.hostPath);
+    }
+
+    return resources;
+  }
+
+  async readImage(mountName: string, imagePath: string) {
+    if (!this.pyodide) {
+      return formatCallToolError("Pyodide not initialized");
+    }
+    try {
+      const resource = await this.readResource(mountName, imagePath);
+      if ("error" in resource) {
+        return formatCallToolError(resource.error);
+      }
+      const content = contentFormatters.formatImage(
+        resource.blob,
+        resource.mimeType
+      );
+      return formatCallToolSuccess(content);
+    } catch (error) {
+      return formatCallToolError(error);
     }
   }
 }
