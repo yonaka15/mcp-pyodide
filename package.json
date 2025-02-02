@@ -14,19 +14,25 @@
     "build"
   ],
   "keywords": [
-  "mcp",
-  "model context protocol",
-  "pyodide",
-  "python"
-],
+    "mcp",
+    "model context protocol",
+    "pyodide",
+    "python"
+  ],
   "author": "Yoshifumi Nakahira (https://github.com/yonaka15)",
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.4.0",
     "arktype": "^2.0.1",
+    "body-parser": "^1.20.3",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
     "pyodide": "^0.27.1"
   },
   "devDependencies": {
+    "@types/body-parser": "^1.19.5",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
     "@types/node": "^22.10.10",
     "typescript": "^5.7.3"
   }
