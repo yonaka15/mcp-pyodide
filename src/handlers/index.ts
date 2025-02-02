@@ -13,6 +13,7 @@ import * as tools from "../tools/index.js";
 import { ResourceClient } from "../resources/index.js";
 import { PyodideManager } from "../lib/pyodide/pyodide-manager.js";
 import { formatCallToolError } from "../formatters/index.js";
+import { runSSEServer } from "../sse.js";
 
 // Create a server instance
 const server = new Server(
@@ -56,27 +57,18 @@ const isReadImageArgs = type({
 
 server.setRequestHandler(ListResourcesRequestSchema, async (request) => {
   const pyodideManager = PyodideManager.getInstance();
-
   const resourceClient = new ResourceClient(pyodideManager);
   const resources = await resourceClient.listResources();
-
-  return {
-    resources,
-  };
+  return { resources };
 });
 
 server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   const pyodideManager = PyodideManager.getInstance();
-
   const resourceClient = new ResourceClient(pyodideManager);
   const resource = await resourceClient.readResource(request.params.uri);
-
-  return {
-    contents: [resource],
-  };
+  return { contents: [resource] };
 });
 
-// Tools list handler
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: TOOLS,
 }));
@@ -141,26 +133,31 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 });
 
-// Start server
-async function runServer() {
+async function initializePyodide() {
   const pyodideManager = PyodideManager.getInstance();
-
   const cacheDir = process.env.PYODIDE_CACHE_DIR || "./cache";
   const dataDir = process.env.PYODIDE_DATA_DIR || "./data";
 
-  // Initialize Pyodide
   if (!(await pyodideManager.initialize(cacheDir))) {
-    console.error("Failed to initialize Pyodide");
-    return;
+    throw new Error("Failed to initialize Pyodide");
   }
 
-  // Mount directories from environment variables
   await pyodideManager.mountDirectory("data", dataDir);
-
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  console.error("Pyodide MCP Server running on stdio");
 }
 
-// Exports
-export { runServer };
+async function runServer() {
+  const args = process.argv.slice(2);
+  const useSSE = args.includes("--sse");
+
+  await initializePyodide();
+
+  if (useSSE) {
+    await runSSEServer(server);
+  } else {
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+    console.error("Pyodide MCP Server running on stdio");
+  }
+}
+
+export { server, runServer };
