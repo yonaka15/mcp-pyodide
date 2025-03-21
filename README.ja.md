@@ -83,7 +83,7 @@ npm run build
 
 ## ライセンス
 
-ISC
+MIT
 
 ## 貢献
 
