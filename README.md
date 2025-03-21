@@ -2,6 +2,10 @@
 
 A Pyodide server implementation for the Model Context Protocol (MCP). This server enables Large Language Models (LLMs) to execute Python code through the MCP interface.
 
+<a href="https://glama.ai/mcp/servers/pxls43joly">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/pxls43joly/badge" alt="mcp-pyodide MCP server" />
+</a>
+
 ## Features
 
 - Python code execution capability for LLMs using Pyodide
