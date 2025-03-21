@@ -35,5 +35,8 @@
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.10",
     "typescript": "^5.7.3"
+  },
+  "volta": {
+    "node": "23.10.0"
   }
 }
