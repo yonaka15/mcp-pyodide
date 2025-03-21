@@ -22,13 +22,13 @@ export const EXECUTE_PYTHON_TOOL: Tool = {
 
 export const INSTALL_PYTHON_PACKAGES_TOOL: Tool = {
   name: "install-python-packages",
-  description: "Install Python packages using Pyodide",
+  description: "Install Python packages using Pyodide. Multiple packages can be specified using space-separated format.",
   inputSchema: {
     type: "object",
     properties: {
       package: {
         type: "string",
-        description: "Python package to install",
+        description: "Python package(s) to install. For multiple packages, use space-separated format (e.g., 'numpy matplotlib pandas').",
       },
     },
     required: ["package"],

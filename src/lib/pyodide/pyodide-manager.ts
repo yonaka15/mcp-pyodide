@@ -299,18 +299,37 @@ list_directory("${mountConfig.mountPoint}")
     }
 
     try {
-      const { output } = await withOutputCapture(
-        this.pyodide,
-        async () => {
-          await this.pyodide!.loadPackage(packageName, {
-            messageCallback: (msg: string) => console.log(msg),
-            errorCallback: (err: string) => console.error(err),
-          });
-        },
-        { suppressConsole: true }
-      );
-
-      return formatCallToolSuccess(output);
+      // パッケージ名をスペースで分割
+      const packages = packageName.split(" ").map(pkg => pkg.trim()).filter(Boolean);
+      
+      if (packages.length === 0) {
+        return formatCallToolError("No valid package names specified");
+      }
+      
+      // 出力を収集
+      const outputs: string[] = [];
+      
+      // 各パッケージをインストール
+      for (const pkg of packages) {
+        try {
+          const { output } = await withOutputCapture(
+            this.pyodide,
+            async () => {
+              await this.pyodide!.loadPackage(pkg, {
+                messageCallback: (msg: string) => console.log(msg),
+                errorCallback: (err: string) => console.error(err),
+              });
+            },
+            { suppressConsole: true }
+          );
+          
+          outputs.push(`Successfully installed ${pkg}:\n${output}`);
+        } catch (error) {
+          outputs.push(`Failed to install ${pkg}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      
+      return formatCallToolSuccess(outputs.join("\n\n"));
     } catch (error) {
       return formatCallToolError(error);
     }
