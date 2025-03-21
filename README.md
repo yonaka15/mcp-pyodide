@@ -118,7 +118,7 @@ npm run build
 
 ## License
 
-ISC
+MIT
 
 ## Contributing
 
@@ -138,4 +138,3 @@ ISC
 ## Support
 
 Please use the Issue tracker for problems and questions.
-
