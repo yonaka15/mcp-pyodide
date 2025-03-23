@@ -35,7 +35,7 @@ async function downloadWheel(url: string, destPath: string): Promise<string> {
   }
 
   return new Promise((resolve, reject) => {
-    const protocol = url.startsWith('https:') ? https : http;
+    const protocol = url.startsWith("https:") ? https : http;
     const file = fs.createWriteStream(destPath);
 
     const request = protocol.get(url, (response) => {
@@ -53,24 +53,26 @@ async function downloadWheel(url: string, destPath: string): Promise<string> {
 
       // エラーステータスの処理
       if (response.statusCode !== 200) {
-        reject(new Error(`Failed to download: Status code ${response.statusCode}`));
+        reject(
+          new Error(`Failed to download: Status code ${response.statusCode}`)
+        );
         return;
       }
 
       response.pipe(file);
 
-      file.on('finish', () => {
+      file.on("finish", () => {
         file.close();
         resolve(path.resolve(destPath));
       });
     });
 
-    request.on('error', (err) => {
+    request.on("error", (err) => {
       fs.unlinkSync(destPath); // エラー時にファイルを削除
       reject(err);
     });
 
-    file.on('error', (err) => {
+    file.on("error", (err) => {
       fs.unlinkSync(destPath); // エラー時にファイルを削除
       reject(err);
     });
@@ -81,39 +83,44 @@ async function downloadWheel(url: string, destPath: string): Promise<string> {
 async function getWheelUrl(packageName: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const url = `https://pypi.org/pypi/${packageName}/json`;
-    
-    https.get(url, (response) => {
-      if (response.statusCode !== 200) {
-        reject(new Error(`Failed to get package info: ${response.statusCode}`));
-        return;
-      }
 
-      let data = '';
-      response.on('data', (chunk) => {
-        data += chunk;
-      });
-
-      response.on('end', () => {
-        try {
-          const packageInfo = JSON.parse(data);
-          const releases = packageInfo.releases[packageInfo.info.version];
-          
-          // py3-none-any.whl形式のWheelファイルを検索
-          const wheel = releases.find((release: any) => 
-            release.packagetype === 'bdist_wheel' && 
-            release.filename.includes('py3-none-any.whl')
+    https
+      .get(url, (response) => {
+        if (response.statusCode !== 200) {
+          reject(
+            new Error(`Failed to get package info: ${response.statusCode}`)
           );
-          
-          if (wheel) {
-            resolve(wheel.url);
-          } else {
-            reject(new Error(`No compatible wheel found for ${packageName}`));
-          }
-        } catch (error) {
-          reject(error);
+          return;
         }
-      });
-    }).on('error', reject);
+
+        let data = "";
+        response.on("data", (chunk) => {
+          data += chunk;
+        });
+
+        response.on("end", () => {
+          try {
+            const packageInfo = JSON.parse(data);
+            const releases = packageInfo.releases[packageInfo.info.version];
+
+            // py3-none-any.whl形式のWheelファイルを検索
+            const wheel = releases.find(
+              (release: any) =>
+                release.packagetype === "bdist_wheel" &&
+                release.filename.includes("py3-none-any.whl")
+            );
+
+            if (wheel) {
+              resolve(wheel.url);
+            } else {
+              reject(new Error(`No compatible wheel found for ${packageName}`));
+            }
+          } catch (error) {
+            reject(error);
+          }
+        });
+      })
+      .on("error", reject);
   });
 }
 
@@ -396,24 +403,28 @@ list_directory("${mountConfig.mountPoint}")
       await this.pyodide.loadPackage("micropip");
 
       // パッケージ名をスペースで分割
-      const packages = packageName.split(" ").map(pkg => pkg.trim()).filter(Boolean);
-      
+      const packages = packageName
+        .split(" ")
+        .map((pkg) => pkg.trim())
+        .filter(Boolean);
+
       if (packages.length === 0) {
         return formatCallToolError("No valid package names specified");
       }
 
       // 出力メッセージを集める
       const outputs: string[] = [];
-      
+
       // 一時ディレクトリを作成
-      const tempDir = path.join(process.cwd(), ".temp_wheels");
+      //const tempDir = path.join(process.cwd(), ".temp_wheels");
+      const tempDir = process.env.PYODIDE_CACHE_DIR || "./cache";
       if (!fs.existsSync(tempDir)) {
         fs.mkdirSync(tempDir, { recursive: true });
       }
 
       // Pyodide内のtempディレクトリを作成
       this.pyodide.FS.mkdirTree("/tmp/wheels");
-      
+
       // 各パッケージを処理
       for (const pkg of packages) {
         try {
@@ -421,16 +432,16 @@ list_directory("${mountConfig.mountPoint}")
           const wheelUrl = await getWheelUrl(pkg);
           const wheelFilename = path.basename(wheelUrl);
           const localWheelPath = path.join(tempDir, wheelFilename);
-          
+
           // wheelをダウンロード
           outputs.push(`Downloading wheel for ${pkg}...`);
           await downloadWheel(wheelUrl, localWheelPath);
-          
+
           // wheelをPyodideのファイルシステムにコピー
           const wheelData = fs.readFileSync(localWheelPath);
           const pyodideWheelPath = `/tmp/wheels/${wheelFilename}`;
           this.pyodide.FS.writeFile(pyodideWheelPath, wheelData);
-          
+
           // micropipでインストール
           const { output } = await withOutputCapture(
             this.pyodide,
@@ -442,14 +453,18 @@ list_directory("${mountConfig.mountPoint}")
             },
             { suppressConsole: true }
           );
-          
+
           outputs.push(`Successfully installed ${pkg}: ${output}`);
         } catch (error) {
           // 個別のパッケージのエラーを記録して続行
-          outputs.push(`Failed to install ${pkg}: ${error instanceof Error ? error.message : String(error)}`);
+          outputs.push(
+            `Failed to install ${pkg}: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
         }
       }
-      
+
       return formatCallToolSuccess(outputs.join("\n\n"));
     } catch (error) {
       return formatCallToolError(error);
