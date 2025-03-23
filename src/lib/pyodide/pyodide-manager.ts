@@ -1,6 +1,8 @@
 import { loadPyodide } from "pyodide";
 import * as path from "path";
 import * as fs from "fs";
+import * as https from "https";
+import * as http from "http";
 
 import { withOutputCapture } from "../../utils/output-capture.js";
 import {
@@ -22,6 +24,104 @@ interface ResourceInfo {
   name: string; // File name
   uri: string; // Full URI (file://....)
   mimeType: string; // MIME type
+}
+
+// Node.js環境でwheelファイルをダウンロードする
+async function downloadWheel(url: string, destPath: string): Promise<string> {
+  // ディレクトリがなければ作成
+  const dir = path.dirname(destPath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  return new Promise((resolve, reject) => {
+    const protocol = url.startsWith("https:") ? https : http;
+    const file = fs.createWriteStream(destPath);
+
+    const request = protocol.get(url, (response) => {
+      // リダイレクトの処理
+      if (response.statusCode === 301 || response.statusCode === 302) {
+        if (response.headers.location) {
+          file.close();
+          fs.unlinkSync(destPath); // 作成した空ファイルを削除
+          downloadWheel(response.headers.location, destPath)
+            .then(resolve)
+            .catch(reject);
+          return;
+        }
+      }
+
+      // エラーステータスの処理
+      if (response.statusCode !== 200) {
+        reject(
+          new Error(`Failed to download: Status code ${response.statusCode}`)
+        );
+        return;
+      }
+
+      response.pipe(file);
+
+      file.on("finish", () => {
+        file.close();
+        resolve(path.resolve(destPath));
+      });
+    });
+
+    request.on("error", (err) => {
+      fs.unlinkSync(destPath); // エラー時にファイルを削除
+      reject(err);
+    });
+
+    file.on("error", (err) => {
+      fs.unlinkSync(destPath); // エラー時にファイルを削除
+      reject(err);
+    });
+  });
+}
+
+// PyPIからwheelファイルのURLを取得する
+async function getWheelUrl(packageName: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const url = `https://pypi.org/pypi/${packageName}/json`;
+
+    https
+      .get(url, (response) => {
+        if (response.statusCode !== 200) {
+          reject(
+            new Error(`Failed to get package info: ${response.statusCode}`)
+          );
+          return;
+        }
+
+        let data = "";
+        response.on("data", (chunk) => {
+          data += chunk;
+        });
+
+        response.on("end", () => {
+          try {
+            const packageInfo = JSON.parse(data);
+            const releases = packageInfo.releases[packageInfo.info.version];
+
+            // py3-none-any.whl形式のWheelファイルを検索
+            const wheel = releases.find(
+              (release: any) =>
+                release.packagetype === "bdist_wheel" &&
+                release.filename.includes("py3-none-any.whl")
+            );
+
+            if (wheel) {
+              resolve(wheel.url);
+            } else {
+              reject(new Error(`No compatible wheel found for ${packageName}`));
+            }
+          } catch (error) {
+            reject(error);
+          }
+        });
+      })
+      .on("error", reject);
+  });
 }
 
 class PyodideManager {
@@ -300,35 +400,89 @@ list_directory("${mountConfig.mountPoint}")
 
     try {
       // パッケージ名をスペースで分割
-      const packages = packageName.split(" ").map(pkg => pkg.trim()).filter(Boolean);
-      
+      const packages = packageName
+        .split(" ")
+        .map((pkg) => pkg.trim())
+        .filter(Boolean);
+
       if (packages.length === 0) {
         return formatCallToolError("No valid package names specified");
       }
-      
-      // 出力を収集
+
+      // 出力メッセージを集める
       const outputs: string[] = [];
-      
-      // 各パッケージをインストール
+
+      // 各パッケージを処理
       for (const pkg of packages) {
         try {
-          const { output } = await withOutputCapture(
-            this.pyodide,
-            async () => {
-              await this.pyodide!.loadPackage(pkg, {
-                messageCallback: (msg: string) => console.log(msg),
-                errorCallback: (err: string) => console.error(err),
-              });
-            },
-            { suppressConsole: true }
-          );
+          // 1. まずpyodide.loadPackageでインストールを試みる
+          outputs.push(`Attempting to install ${pkg} using loadPackage...`);
           
-          outputs.push(`Successfully installed ${pkg}:\n${output}`);
+          try {
+            await this.pyodide.loadPackage(pkg);
+            outputs.push(`Successfully installed ${pkg} using loadPackage.`);
+            continue; // このパッケージは成功したので次のパッケージへ
+          } catch (loadPackageError) {
+            outputs.push(`loadPackage failed for ${pkg}: ${loadPackageError instanceof Error ? loadPackageError.message : String(loadPackageError)}`);
+            outputs.push(`Falling back to micropip for ${pkg}...`);
+            
+            // loadPackageが失敗した場合は、micropipを使用する
+            // micropipがまだロードされていない場合はロードする
+            try {
+              // micropipをロードする
+              await this.pyodide.loadPackage("micropip");
+            } catch (micropipLoadError) {
+              throw new Error(`Failed to load micropip: ${micropipLoadError instanceof Error ? micropipLoadError.message : String(micropipLoadError)}`);
+            }
+            
+            // 2. micropipを使ったインストール処理
+            // 一時ディレクトリを作成
+            const tempDir = process.env.PYODIDE_CACHE_DIR || "./cache";
+            if (!fs.existsSync(tempDir)) {
+              fs.mkdirSync(tempDir, { recursive: true });
+            }
+
+            // Pyodide内のtempディレクトリを作成
+            this.pyodide.FS.mkdirTree("/tmp/wheels");
+            
+            // PyPIからwheelのURLを取得
+            const wheelUrl = await getWheelUrl(pkg);
+            const wheelFilename = path.basename(wheelUrl);
+            const localWheelPath = path.join(tempDir, wheelFilename);
+
+            // wheelをダウンロード
+            outputs.push(`Downloading wheel for ${pkg}...`);
+            await downloadWheel(wheelUrl, localWheelPath);
+
+            // wheelをPyodideのファイルシステムにコピー
+            const wheelData = fs.readFileSync(localWheelPath);
+            const pyodideWheelPath = `/tmp/wheels/${wheelFilename}`;
+            this.pyodide.FS.writeFile(pyodideWheelPath, wheelData);
+
+            // micropipでインストール
+            const { output } = await withOutputCapture(
+              this.pyodide,
+              async () => {
+                await this.pyodide!.runPythonAsync(`
+                  import micropip
+                  await micropip.install("emfs:${pyodideWheelPath}")
+                `);
+              },
+              { suppressConsole: true }
+            );
+
+            outputs.push(`Successfully installed ${pkg} using micropip: ${output}`);
+          }
         } catch (error) {
-          outputs.push(`Failed to install ${pkg}: ${error instanceof Error ? error.message : String(error)}`);
+          // 個別のパッケージのエラーを記録して続行
+          outputs.push(
+            `Failed to install ${pkg}: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
         }
       }
-      
+
       return formatCallToolSuccess(outputs.join("\n\n"));
     } catch (error) {
       return formatCallToolError(error);
