@@ -399,9 +399,6 @@ list_directory("${mountConfig.mountPoint}")
     }
 
     try {
-      // まずmicropipをロードする (ビルトインなのでloadPackageで大丈夫なはず)
-      await this.pyodide.loadPackage("micropip");
-
       // パッケージ名をスペースで分割
       const packages = packageName
         .split(" ")
@@ -415,46 +412,67 @@ list_directory("${mountConfig.mountPoint}")
       // 出力メッセージを集める
       const outputs: string[] = [];
 
-      // 一時ディレクトリを作成
-      //const tempDir = path.join(process.cwd(), ".temp_wheels");
-      const tempDir = process.env.PYODIDE_CACHE_DIR || "./cache";
-      if (!fs.existsSync(tempDir)) {
-        fs.mkdirSync(tempDir, { recursive: true });
-      }
-
-      // Pyodide内のtempディレクトリを作成
-      this.pyodide.FS.mkdirTree("/tmp/wheels");
-
       // 各パッケージを処理
       for (const pkg of packages) {
         try {
-          // PyPIからwheelのURLを取得
-          const wheelUrl = await getWheelUrl(pkg);
-          const wheelFilename = path.basename(wheelUrl);
-          const localWheelPath = path.join(tempDir, wheelFilename);
+          // 1. まずpyodide.loadPackageでインストールを試みる
+          outputs.push(`Attempting to install ${pkg} using loadPackage...`);
+          
+          try {
+            await this.pyodide.loadPackage(pkg);
+            outputs.push(`Successfully installed ${pkg} using loadPackage.`);
+            continue; // このパッケージは成功したので次のパッケージへ
+          } catch (loadPackageError) {
+            outputs.push(`loadPackage failed for ${pkg}: ${loadPackageError instanceof Error ? loadPackageError.message : String(loadPackageError)}`);
+            outputs.push(`Falling back to micropip for ${pkg}...`);
+            
+            // loadPackageが失敗した場合は、micropipを使用する
+            // micropipがまだロードされていない場合はロードする
+            try {
+              // micropipをロードする
+              await this.pyodide.loadPackage("micropip");
+            } catch (micropipLoadError) {
+              throw new Error(`Failed to load micropip: ${micropipLoadError instanceof Error ? micropipLoadError.message : String(micropipLoadError)}`);
+            }
+            
+            // 2. micropipを使ったインストール処理
+            // 一時ディレクトリを作成
+            const tempDir = process.env.PYODIDE_CACHE_DIR || "./cache";
+            if (!fs.existsSync(tempDir)) {
+              fs.mkdirSync(tempDir, { recursive: true });
+            }
 
-          // wheelをダウンロード
-          outputs.push(`Downloading wheel for ${pkg}...`);
-          await downloadWheel(wheelUrl, localWheelPath);
+            // Pyodide内のtempディレクトリを作成
+            this.pyodide.FS.mkdirTree("/tmp/wheels");
+            
+            // PyPIからwheelのURLを取得
+            const wheelUrl = await getWheelUrl(pkg);
+            const wheelFilename = path.basename(wheelUrl);
+            const localWheelPath = path.join(tempDir, wheelFilename);
 
-          // wheelをPyodideのファイルシステムにコピー
-          const wheelData = fs.readFileSync(localWheelPath);
-          const pyodideWheelPath = `/tmp/wheels/${wheelFilename}`;
-          this.pyodide.FS.writeFile(pyodideWheelPath, wheelData);
+            // wheelをダウンロード
+            outputs.push(`Downloading wheel for ${pkg}...`);
+            await downloadWheel(wheelUrl, localWheelPath);
 
-          // micropipでインストール
-          const { output } = await withOutputCapture(
-            this.pyodide,
-            async () => {
-              await this.pyodide!.runPythonAsync(`
-                import micropip
-                await micropip.install("emfs:${pyodideWheelPath}")
-              `);
-            },
-            { suppressConsole: true }
-          );
+            // wheelをPyodideのファイルシステムにコピー
+            const wheelData = fs.readFileSync(localWheelPath);
+            const pyodideWheelPath = `/tmp/wheels/${wheelFilename}`;
+            this.pyodide.FS.writeFile(pyodideWheelPath, wheelData);
 
-          outputs.push(`Successfully installed ${pkg}: ${output}`);
+            // micropipでインストール
+            const { output } = await withOutputCapture(
+              this.pyodide,
+              async () => {
+                await this.pyodide!.runPythonAsync(`
+                  import micropip
+                  await micropip.install("emfs:${pyodideWheelPath}")
+                `);
+              },
+              { suppressConsole: true }
+            );
+
+            outputs.push(`Successfully installed ${pkg} using micropip: ${output}`);
+          }
         } catch (error) {
           // 個別のパッケージのエラーを記録して続行
           outputs.push(
