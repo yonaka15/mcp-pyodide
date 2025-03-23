@@ -1,7 +1,7 @@
 import { Tool } from "@modelcontextprotocol/sdk/types.js";
 
 export const EXECUTE_PYTHON_TOOL: Tool = {
-  name: "execute-python",
+  name: "pyodide-execute",
   description:
     "Execute Python code using Pyodide with output capture. When generating images, they will be automatically saved to the output directory instead of being displayed. Images can be accessed from the saved file paths that will be included in the output.",
   inputSchema: {
@@ -21,14 +21,16 @@ export const EXECUTE_PYTHON_TOOL: Tool = {
 };
 
 export const INSTALL_PYTHON_PACKAGES_TOOL: Tool = {
-  name: "install-python-packages",
-  description: "Install Python packages using Pyodide. Multiple packages can be specified using space-separated format.",
+  name: "pyodide-install-packages",
+  description:
+    "Install Python packages using Pyodide. Multiple packages can be specified using space-separated format.",
   inputSchema: {
     type: "object",
     properties: {
       package: {
         type: "string",
-        description: "Python package(s) to install. For multiple packages, use space-separated format (e.g., 'numpy matplotlib pandas').",
+        description:
+          "Python package(s) to install. For multiple packages, use space-separated format (e.g., 'numpy matplotlib pandas').",
       },
     },
     required: ["package"],
@@ -36,7 +38,7 @@ export const INSTALL_PYTHON_PACKAGES_TOOL: Tool = {
 };
 
 export const GET_MOUNT_POINTS_TOOL: Tool = {
-  name: "get-mount-points",
+  name: "pyodide-get-mount-points",
   description: "List mounted directories",
   inputSchema: {
     type: "object",
@@ -45,7 +47,7 @@ export const GET_MOUNT_POINTS_TOOL: Tool = {
 };
 
 export const LIST_MOUNTED_DIRECTORY_TOOL: Tool = {
-  name: "list-mounted-directory",
+  name: "pyodide-list-mounted-directory",
   description: "List contents of a mounted directory",
   inputSchema: {
     type: "object",
@@ -60,7 +62,7 @@ export const LIST_MOUNTED_DIRECTORY_TOOL: Tool = {
 };
 
 export const READ_IMAGE_TOOL: Tool = {
-  name: "read-image",
+  name: "pyodide-read-image",
   description: "Read an image from a mounted directory",
   inputSchema: {
     type: "object",
