@@ -64,3 +64,6 @@ __pycache__/
 .Python
 data/
 cache/
+
+# mcp-pyodide specific
+.temp_wheels/
