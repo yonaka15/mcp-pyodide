@@ -84,7 +84,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const pyodideManager = PyodideManager.getInstance();
 
     switch (name) {
-      case "execute-python": {
+      case "pyodide_execute": {
         const executePythonArgs = isExecutePythonArgs(args);
         if (executePythonArgs instanceof type.errors) {
           throw executePythonArgs;
@@ -93,7 +93,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const results = await pyodideManager.executePython(code, timeout);
         return results;
       }
-      case "install-python-packages": {
+      case "pyodide_install-packages": {
         const installPythonPackagesArgs = isInstallPythonPackagesArgs(args);
         if (installPythonPackagesArgs instanceof type.errors) {
           throw installPythonPackagesArgs;
@@ -102,11 +102,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const results = await pyodideManager.installPackage(packageName);
         return results;
       }
-      case "get-mount-points": {
+      case "pyodide_get-mount-points": {
         const results = await pyodideManager.getMountPoints();
         return results;
       }
-      case "list-mounted-directory": {
+      case "pyodide_list-mounted-directory": {
         const listMountedDirectoryArgs = isListMountedDirectoryArgs(args);
         if (listMountedDirectoryArgs instanceof type.errors) {
           throw listMountedDirectoryArgs;
@@ -115,7 +115,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const results = await pyodideManager.listMountedDirectory(mountName);
         return results;
       }
-      case "read-image": {
+      case "pyodide_read-image": {
         const readImageArgs = isReadImageArgs(args);
         if (readImageArgs instanceof type.errors) {
           throw readImageArgs;
