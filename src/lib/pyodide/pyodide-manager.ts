@@ -399,91 +399,96 @@ list_directory("${mountConfig.mountPoint}")
     }
 
     try {
-      // パッケージ名をスペースで分割
-      const packages = packageName
-        .split(" ")
-        .map((pkg) => pkg.trim())
-        .filter(Boolean);
+      // すべての処理を withOutputCapture でラップして標準出力を抑制
+      const { result: outputs } = await withOutputCapture(
+        this.pyodide,
+        async () => {
+          // パッケージ名をスペースで分割
+          const packages = packageName
+            .split(" ")
+            .map((pkg) => pkg.trim())
+            .filter(Boolean);
 
-      if (packages.length === 0) {
-        return formatCallToolError("No valid package names specified");
-      }
+          if (packages.length === 0) {
+            throw new Error("No valid package names specified");
+          }
 
-      // 出力メッセージを集める
-      const outputs: string[] = [];
+          // 出力メッセージを集める
+          const installResults: string[] = [];
 
-      // 各パッケージを処理
-      for (const pkg of packages) {
-        try {
-          // 1. まずpyodide.loadPackageでインストールを試みる
-          outputs.push(`Attempting to install ${pkg} using loadPackage...`);
-          
-          try {
-            await this.pyodide.loadPackage(pkg);
-            outputs.push(`Successfully installed ${pkg} using loadPackage.`);
-            continue; // このパッケージは成功したので次のパッケージへ
-          } catch (loadPackageError) {
-            outputs.push(`loadPackage failed for ${pkg}: ${loadPackageError instanceof Error ? loadPackageError.message : String(loadPackageError)}`);
-            outputs.push(`Falling back to micropip for ${pkg}...`);
-            
-            // loadPackageが失敗した場合は、micropipを使用する
-            // micropipがまだロードされていない場合はロードする
+          // 各パッケージを処理
+          for (const pkg of packages) {
             try {
-              // micropipをロードする
-              await this.pyodide.loadPackage("micropip");
-            } catch (micropipLoadError) {
-              throw new Error(`Failed to load micropip: ${micropipLoadError instanceof Error ? micropipLoadError.message : String(micropipLoadError)}`);
-            }
-            
-            // 2. micropipを使ったインストール処理
-            // 一時ディレクトリを作成
-            const tempDir = process.env.PYODIDE_CACHE_DIR || "./cache";
-            if (!fs.existsSync(tempDir)) {
-              fs.mkdirSync(tempDir, { recursive: true });
-            }
+              // 1. まずpyodide.loadPackageでインストールを試みる
+              installResults.push(`Attempting to install ${pkg} using loadPackage...`);
+              
+              try {
+                await this.pyodide!.loadPackage(pkg);
+                installResults.push(`Successfully installed ${pkg} using loadPackage.`);
+                continue; // このパッケージは成功したので次のパッケージへ
+              } catch (loadPackageError) {
+                installResults.push(`loadPackage failed for ${pkg}: ${loadPackageError instanceof Error ? loadPackageError.message : String(loadPackageError)}`);
+                installResults.push(`Falling back to micropip for ${pkg}...`);
+                
+                // loadPackageが失敗した場合は、micropipを使用する
+                // micropipがまだロードされていない場合はロードする
+                try {
+                  // micropipをロードする
+                  await this.pyodide!.loadPackage("micropip");
+                } catch (micropipLoadError) {
+                  throw new Error(`Failed to load micropip: ${micropipLoadError instanceof Error ? micropipLoadError.message : String(micropipLoadError)}`);
+                }
+                
+                // 2. micropipを使ったインストール処理
+                // 一時ディレクトリを作成
+                const tempDir = process.env.PYODIDE_CACHE_DIR || "./cache";
+                if (!fs.existsSync(tempDir)) {
+                  fs.mkdirSync(tempDir, { recursive: true });
+                }
 
-            // Pyodide内のtempディレクトリを作成
-            this.pyodide.FS.mkdirTree("/tmp/wheels");
-            
-            // PyPIからwheelのURLを取得
-            const wheelUrl = await getWheelUrl(pkg);
-            const wheelFilename = path.basename(wheelUrl);
-            const localWheelPath = path.join(tempDir, wheelFilename);
+                // Pyodide内のtempディレクトリを作成
+                this.pyodide!.FS.mkdirTree("/tmp/wheels");
+                
+                // PyPIからwheelのURLを取得
+                const wheelUrl = await getWheelUrl(pkg);
+                const wheelFilename = path.basename(wheelUrl);
+                const localWheelPath = path.join(tempDir, wheelFilename);
 
-            // wheelをダウンロード
-            outputs.push(`Downloading wheel for ${pkg}...`);
-            await downloadWheel(wheelUrl, localWheelPath);
+                // wheelをダウンロード
+                installResults.push(`Downloading wheel for ${pkg}...`);
+                await downloadWheel(wheelUrl, localWheelPath);
 
-            // wheelをPyodideのファイルシステムにコピー
-            const wheelData = fs.readFileSync(localWheelPath);
-            const pyodideWheelPath = `/tmp/wheels/${wheelFilename}`;
-            this.pyodide.FS.writeFile(pyodideWheelPath, wheelData);
+                // wheelをPyodideのファイルシステムにコピー
+                const wheelData = fs.readFileSync(localWheelPath);
+                const pyodideWheelPath = `/tmp/wheels/${wheelFilename}`;
+                this.pyodide!.FS.writeFile(pyodideWheelPath, wheelData);
 
-            // micropipでインストール
-            const { output } = await withOutputCapture(
-              this.pyodide,
-              async () => {
-                await this.pyodide!.runPythonAsync(`
+                // micropipでインストール（内部の出力もキャプチャ）
+                const micropipResult = await this.pyodide!.runPythonAsync(`
                   import micropip
                   await micropip.install("emfs:${pyodideWheelPath}")
+                  "Package installed successfully"
                 `);
-              },
-              { suppressConsole: true }
-            );
 
-            outputs.push(`Successfully installed ${pkg} using micropip: ${output}`);
+                installResults.push(`Successfully installed ${pkg} using micropip: ${micropipResult}`);
+              }
+            } catch (error) {
+              // 個別のパッケージのエラーを記録して続行
+              installResults.push(
+                `Failed to install ${pkg}: ${
+                  error instanceof Error ? error.message : String(error)
+                }`
+              );
+            }
           }
-        } catch (error) {
-          // 個別のパッケージのエラーを記録して続行
-          outputs.push(
-            `Failed to install ${pkg}: ${
-              error instanceof Error ? error.message : String(error)
-            }`
-          );
-        }
-      }
 
-      return formatCallToolSuccess(outputs.join("\n\n"));
+          return installResults.join("\n\n");
+        },
+        { suppressConsole: true } // コンソール出力を抑制
+      );
+
+      // キャプチャした出力は引き続き返す
+      return formatCallToolSuccess(outputs);
     } catch (error) {
       return formatCallToolError(error);
     }
