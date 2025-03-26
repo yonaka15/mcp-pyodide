@@ -144,10 +144,10 @@ class PyodideManager {
       this.pyodide = await loadPyodide({
         packageCacheDir,
         stdout: (text: string) => {
-          console.log("[Python stdout]:", text);
+          //console.log("[Python stdout]:", text);
         },
         stderr: (text: string) => {
-          console.error("[Python stderr]:", text);
+          //console.error("[Python stderr]:", text);
         },
         jsglobals: {
           clearInterval,
@@ -419,7 +419,14 @@ list_directory("${mountConfig.mountPoint}")
           outputs.push(`Attempting to install ${pkg} using loadPackage...`);
 
           try {
-            await this.pyodide.loadPackage(pkg);
+            await this.pyodide.loadPackage(pkg, {
+              messageCallback: (msg) => {
+                outputs.push(`loadPackage: ${msg}`);
+              },
+              errorCallback: (err) => {
+                throw new Error(err);
+              },
+            });
             outputs.push(`Successfully installed ${pkg} using loadPackage.`);
             continue; // このパッケージは成功したので次のパッケージへ
           } catch (loadPackageError) {
@@ -436,7 +443,14 @@ list_directory("${mountConfig.mountPoint}")
             // micropipがまだロードされていない場合はロードする
             try {
               // micropipをロードする
-              await this.pyodide.loadPackage("micropip");
+              await this.pyodide.loadPackage("micropip", {
+                messageCallback: (msg) => {
+                  outputs.push(`loadPackage: ${msg}`);
+                },
+                errorCallback: (err) => {
+                  throw new Error(err);
+                },
+              });
             } catch (micropipLoadError) {
               throw new Error(
                 `Failed to load micropip: ${
