@@ -144,10 +144,10 @@ class PyodideManager {
       this.pyodide = await loadPyodide({
         packageCacheDir,
         stdout: (text: string) => {
-          console.log("[Python stdout]:", text);
+          //console.log("[Python stdout]:", text);
         },
         stderr: (text: string) => {
-          console.error("[Python stderr]:", text);
+          //console.error("[Python stderr]:", text);
         },
         jsglobals: {
           clearInterval,
@@ -417,24 +417,50 @@ list_directory("${mountConfig.mountPoint}")
         try {
           // 1. まずpyodide.loadPackageでインストールを試みる
           outputs.push(`Attempting to install ${pkg} using loadPackage...`);
-          
+
           try {
-            await this.pyodide.loadPackage(pkg);
+            await this.pyodide.loadPackage(pkg, {
+              messageCallback: (msg) => {
+                outputs.push(`loadPackage: ${msg}`);
+              },
+              errorCallback: (err) => {
+                throw new Error(err);
+              },
+            });
             outputs.push(`Successfully installed ${pkg} using loadPackage.`);
             continue; // このパッケージは成功したので次のパッケージへ
           } catch (loadPackageError) {
-            outputs.push(`loadPackage failed for ${pkg}: ${loadPackageError instanceof Error ? loadPackageError.message : String(loadPackageError)}`);
+            outputs.push(
+              `loadPackage failed for ${pkg}: ${
+                loadPackageError instanceof Error
+                  ? loadPackageError.message
+                  : String(loadPackageError)
+              }`
+            );
             outputs.push(`Falling back to micropip for ${pkg}...`);
-            
+
             // loadPackageが失敗した場合は、micropipを使用する
             // micropipがまだロードされていない場合はロードする
             try {
               // micropipをロードする
-              await this.pyodide.loadPackage("micropip");
+              await this.pyodide.loadPackage("micropip", {
+                messageCallback: (msg) => {
+                  outputs.push(`loadPackage: ${msg}`);
+                },
+                errorCallback: (err) => {
+                  throw new Error(err);
+                },
+              });
             } catch (micropipLoadError) {
-              throw new Error(`Failed to load micropip: ${micropipLoadError instanceof Error ? micropipLoadError.message : String(micropipLoadError)}`);
+              throw new Error(
+                `Failed to load micropip: ${
+                  micropipLoadError instanceof Error
+                    ? micropipLoadError.message
+                    : String(micropipLoadError)
+                }`
+              );
             }
-            
+
             // 2. micropipを使ったインストール処理
             // 一時ディレクトリを作成
             const tempDir = process.env.PYODIDE_CACHE_DIR || "./cache";
@@ -444,7 +470,7 @@ list_directory("${mountConfig.mountPoint}")
 
             // Pyodide内のtempディレクトリを作成
             this.pyodide.FS.mkdirTree("/tmp/wheels");
-            
+
             // PyPIからwheelのURLを取得
             const wheelUrl = await getWheelUrl(pkg);
             const wheelFilename = path.basename(wheelUrl);
@@ -471,7 +497,9 @@ list_directory("${mountConfig.mountPoint}")
               { suppressConsole: true }
             );
 
-            outputs.push(`Successfully installed ${pkg} using micropip: ${output}`);
+            outputs.push(
+              `Successfully installed ${pkg} using micropip: ${output}`
+            );
           }
         } catch (error) {
           // 個別のパッケージのエラーを記録して続行
